@@ -381,7 +381,11 @@ filing, section 9). Brief, corrected 2026-10-27 after reading every bot doc:
 - 🛑 **Since bot `f7fc2d0` (2026-11-10 13:13 ET, Trello #184, section 11e) every link opens the visit in the DERM app**
   (`DERM_APP_URL`, default `https://derm.unclogme.app`, `/visits/<visit_id>`), never this server; there is no
   "Open bot dashboard" and no "mark it handled" any more (Fred: *"we should be able to handle everything using DERM
-  App"*). A pending report leaves the digest only by being filed (or after 30 days). Group titles and their "What to
+  App"*). A pending report leaves the digest only by being filed (or after 30 days). The same pending rule, written in
+  SQL, is `derm.fn_gdo_pending()` (`2026-11-24_1430`): the Ops Portal's bell counts it (`ops.portal_waiting`, key
+  `gdo_pending`) and its Manifests > Visits tab lists its visits (`derm.portal_waiting_visits('gdo_pending')`). The bot's
+  digest keeps its own code, so a change to the bot's pending rule changes that function in the same cycle (it was
+  replayed against the digest every day from 10-30 to 11-17, all equal). Group titles and their "What to
   do" line are in the office's words (`server.STATUS_INFO`, `PENDING_GROUPS`). Read the code for the shape: the lines
   below were written before the digest grouped by status (2026-10-28).
 - **Daily digest**, 08:00 New York, covering yesterday. (Historical, see above: it lists one line per ledger row, with no grouping and no

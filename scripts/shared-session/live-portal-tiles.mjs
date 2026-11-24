@@ -40,7 +40,8 @@ const MENU = [
   ['home', 'Home', null, '/'], ['calendar', 'Calendar', 'Work', '/calendar'], ['clients', 'Clients', 'Work', '/clients'],
   ['reviews', 'Reviews', 'Work', '/review'], ['site-files', 'Site files', 'Work', '/planner'], ['my-forms', 'My forms', 'Work', 'https://planner.unclogme.app'],
   ['manifests', 'Manifests', 'Compliance', '/derm/manifests'], ['address-sheets', 'Address sheets', 'Compliance', '/stamp'],
-  ['derm-visits', 'DERM visits', 'Compliance', '/derm'], ['monthly-report', 'Monthly report', 'Compliance', '/derm/monthly'],
+  // #216 DV1 (2026-11-24): DERM visits left the menu; its list is the Visits tab of Manifests (/derm sends there)
+  ['monthly-report', 'Monthly report', 'Compliance', '/derm/monthly'],
   ['gdo-lookup', 'GDO lookup', 'Compliance', '/derm/gdo-lookup'], // Trello #242, 2026-11-24
   ['pumped-water', 'Pumped water', 'Metrics', '/review/water'], ['pumped-grease', 'Pumped grease', 'Metrics', '/review/grease'],
   // Finances, under Metrics, opened by the Client App setting.
@@ -48,7 +49,7 @@ const MENU = [
   ['people', 'People', 'Team', '/hr'], ['access', 'Access', 'Team', '/hr/access'],
 ]
 const FINANCES = ['invoices', 'quotes', 'payments']
-const OFFICE_MENU = ['home', 'calendar', 'clients', 'reviews', 'site-files', 'manifests', 'derm-visits', 'monthly-report', 'gdo-lookup', 'pumped-water', 'pumped-grease', ...FINANCES, 'people']
+const OFFICE_MENU = ['home', 'calendar', 'clients', 'reviews', 'site-files', 'manifests', 'monthly-report', 'gdo-lookup', 'pumped-water', 'pumped-grease', ...FINANCES, 'people']
 const ADMIN_MENU = [...OFFICE_MENU, 'access']
 const TOP = ['hr', 'admin_review', 'client_app', 'visit_calendar', 'derm_tracker', 'stamp_studio', 'picture_planner']
 const SUBS = { hr_pay: 'hr', hr_bonus: 'hr', pp_approve: 'picture_planner', pp_forms: 'picture_planner' }
@@ -306,9 +307,9 @@ const readBar = (page, wide) => page.evaluate(([wide, BAR]) => {
 // One page of each area: what the bar holds for a person who can open it, and the lit item.
 const AREAS = [
   { at: 'calendar', app: 'visit_calendar', name: 'Visit Calendar', title: 'Calendar', lit: 'calendar' },
-  { at: 'derm', app: 'derm_tracker', name: 'DERM Tracker', title: 'DERM visits', lit: 'derm-visits' },
+  { at: 'derm/manifests/visits', app: 'derm_tracker', name: 'DERM Tracker', links: ['/derm/manifests', '/derm/manifests/visits', '/derm/manifests/health'], lit: 'manifests' },
   // Stage C step 2: Upload is the page's orange button, not a link of the bar
-  { at: 'derm/manifests', app: 'derm_tracker', name: 'DERM Tracker', links: ['/derm/manifests', '/derm/manifests/health'], lit: 'manifests' },
+  { at: 'derm/manifests', app: 'derm_tracker', name: 'DERM Tracker', links: ['/derm/manifests', '/derm/manifests/visits', '/derm/manifests/health'], lit: 'manifests' },
   { at: 'review', app: 'admin_review', name: 'Admin Review', title: 'Reviews', lit: 'reviews' },
   { at: 'planner', app: 'picture_planner', name: 'Picture Planner', links: ['/planner', '/planner/forms'], lit: 'site-files' },
   { at: 'hr/employees', app: 'hr', name: 'HR App', title: 'People', lit: 'people' },
@@ -324,7 +325,7 @@ function wantOn(c, area) {
   const lit = c.menu.includes(area.lit) ? area.lit : area.at === 'stamp' && c.menu.includes('address-sheets') ? 'address-sheets' : null
   if (!can(c, area.app) && !forms) return { path: '/' + area.at, refusal: `You do not have access to ${area.name}`, links: [], lit }
   if (forms) return { path: '/planner/forms', links: ['/planner/forms'], lit: null }
-  const links = area.links ? [...area.links, ...(area.at === 'derm/manifests' && can(c, 'stamp_studio') ? ['/stamp'] : [])] : []
+  const links = area.links ? [...area.links, ...(area.at.startsWith('derm/manifests') && can(c, 'stamp_studio') ? ['/stamp'] : [])] : []
   return { path: '/' + area.at, title: area.title, links, lit }
 }
 async function walk(page, w, c, fails) {
@@ -509,20 +510,18 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
   })
 
   // The DERM Tracker module: opens from its tile, keeps its own label, has no theme of its own, draws no second theme or sign-out control.
-  // On DERM visits the bar says so and holds no link. From the Manifests item the bar (the page's band on a phone) holds the
-  // doors to Health, Upload and the sheet list. Leaving it gives the look back.
-  await block(w, h, 'DERM opens, labels its own', ADMIN, PORTAL, async ({ page, seen, fails }) => {
-    await pick(page, w, 'derm-visits', fails)
-    await page.waitForFunction(() => location.pathname.startsWith('/derm'), null, { timeout: 30000 }).catch(() => {})
+  // #216 DV1 (2026-11-24): the old DERM visits address /derm lands on the Visits tab of Manifests. From the Manifests item
+  // the bar (the page's band on a phone) holds the doors to Visits, Health and the sheet list. Leaving it gives the look back.
+  await block(w, h, 'DERM opens, labels its own', ADMIN, PORTAL + 'derm', async ({ page, seen, fails }) => {
+    await page.waitForFunction(() => location.pathname.startsWith('/derm/manifests/visits'), null, { timeout: 30000 }).catch(() => {})
     await page.waitForTimeout(2500)
-    if (at(page) !== '/derm') fails.push(`landed on ${at(page)}`)
+    if (at(page) !== '/derm/manifests/visits') fails.push(`/derm landed on ${at(page)}`)
     const got = await page.evaluate(() => ({
       module: document.documentElement.dataset.module, look: document.documentElement.getAttribute('data-hw-app'),
       darkSheet: document.getElementById('theme-dark-app')?.getAttribute('href') ?? '',
       title: document.title, mainSignOut: [...document.querySelectorAll('main button')].filter((b) => /^sign out$/i.test(b.textContent.trim())).length,
       themes: [...document.querySelectorAll('main [aria-label*="dark" i], main [aria-label*="light" i]')].length,
       overflow: document.documentElement.scrollWidth > window.innerWidth,
-      tabDoors: [...document.querySelectorAll('main a[href="/derm/monthly"], main a[href="/derm/manifests/health"], header.shell-header a[href^="/derm"]')].length,
     }))
     if (got.module) fails.push(`an app set its own theme: data-module "${got.module}"`)
     if (got.look) fails.push(`an app loaded a hosted theme: data-hw-app "${got.look}"`)
@@ -531,8 +530,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     if (got.themes) fails.push('a second theme switch in the page')
     if (got.overflow) fails.push('sideways scroll')
     const visits = await readBar(page, w >= 768)
-    if (w >= 768 && visits.text !== 'DERM visits') fails.push(`bar "${visits.text.slice(0, 40)}" on DERM visits`)
-    if (got.tabDoors) fails.push('DERM visits still links to Monthly or Health from the bar or a band')
+    if (!visits.links.includes('/derm/manifests/visits')) fails.push('the Visits tab is not in the bar on the Visits page')
     const own = Object.entries(seen.labels).filter(([k]) => !/get_my_access|portal_waiting|portal_home|portal_search/.test(k))
     if (!own.length) fails.push('the module asked for no data')
     for (const [k, v] of own) if (![...v].every((x) => x === 'derm-tracker')) fails.push(`${k} labelled "${[...v].join(',')}"`)
@@ -543,7 +541,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     await arrive(page, '/derm/manifests', 8000); await page.waitForTimeout(1200)
     const tabs = await readBar(page, w >= 768)
     // Stage C step 2: Upload left the bar for the page's orange "Upload manifest" button (the Manifests case below).
-    for (const want of ['/derm/manifests/health', '/stamp']) if (!tabs.links.includes(want)) fails.push(`from the Manifests item, no link to ${want}`)
+    for (const want of ['/derm/manifests/visits', '/derm/manifests/health', '/stamp']) if (!tabs.links.includes(want)) fails.push(`from the Manifests item, no link to ${want}`)
     if (tabs.links.includes('/derm/upload')) fails.push('the bar still has an Upload tab')
     if (tabs.sideways > 0) fails.push('sideways scroll on Manifests')
     await shot(page, w, 'manifests tabs')
@@ -853,7 +851,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     const want = [['/calendar?tbs=true', 'Call them, then schedule in To Be Scheduled'], ['/derm/manifests?needs=true', 'Address sheets still to stamp'],
       // no emails row since 2026-11-18 (Fred: "The bell doesn't need a notification for unopened emails"); the Home keeps it
       ['/review', "Sent from the visit's review"], ['/review', 'Not sorted into before and after yet'],
-      ['/derm', 'File them from the visit, as in the Slack alert'], ['/planner', 'New versions waiting for your yes'],
+      ['/derm/manifests/visits?f=gdo', 'File them from the visit, as in the Slack alert'], ['/planner', 'New versions waiting for your yes'],
       ['/planner', 'Approve a Site file version made from it'], ['/calendar', "The truck's GPS has not confirmed how long it stayed"]]
     const label = (await bell.first().getAttribute('aria-label').catch(() => null)) ?? 'no bell'
     if (label !== `Notifications, ${want.length} waiting`) fails.push(`the bell says "${label}"`)
@@ -966,8 +964,8 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
   // router's own mark. The two record pages are opened by address (their lists are empty here): only the menu is read there.
   await block(w, h, 'one lit item on each address', ADMIN, PORTAL, async ({ page, seen, fails }) => {
     // The eight addresses the plan names, at every width. With the sidebar on screen, the rest of its "Lit on" column too.
-    const NAMED = [['', 'home'], ['review/water', 'pumped-water'], ['derm/manifests/health', 'manifests'], ['derm/manifests?q=830714', 'manifests'], ['hr/access', 'access'], ['stamp', 'manifests'], ['derm/visits/1', 'derm-visits'], ['review/visit/1', 'reviews']]
-    const REST = [['calendar', 'calendar'], ['review', 'reviews'], ['review/shift/1', 'reviews'], ['planner', 'site-files'], ['planner/forms', 'site-files'], ['planner/forms/1', 'site-files'], ['planner/property/1', 'site-files'], ['derm/manifests', 'manifests'], ['derm/upload', 'manifests'], ['stamp/1', 'manifests'], ['derm', 'derm-visits'], ['derm/monthly', 'monthly-report'], ['derm/gdo-lookup', 'gdo-lookup'], ['review/grease', 'pumped-grease'], ['finances/invoices', 'invoices'], ['finances/quotes', 'quotes'], ['finances/payments', 'payments'], ['finances', 'invoices'], ['hr/employees', 'people'], ['hr/employees/2', 'people']]
+    const NAMED = [['', 'home'], ['review/water', 'pumped-water'], ['derm/manifests/health', 'manifests'], ['derm/manifests?q=830714', 'manifests'], ['hr/access', 'access'], ['stamp', 'manifests'], ['derm/visits/1', null], ['visits/1', null], ['review/visit/1', 'reviews']]
+    const REST = [['calendar', 'calendar'], ['review', 'reviews'], ['review/shift/1', 'reviews'], ['planner', 'site-files'], ['planner/forms', 'site-files'], ['planner/forms/1', 'site-files'], ['planner/property/1', 'site-files'], ['derm/manifests', 'manifests'], ['derm/upload', 'manifests'], ['stamp/1', 'manifests'], ['derm', 'manifests'], ['derm/manifests/visits', 'manifests'], ['derm/manifests/842363', 'manifests'], ['derm/monthly', 'monthly-report'], ['derm/gdo-lookup', 'gdo-lookup'], ['review/grease', 'pumped-grease'], ['finances/invoices', 'invoices'], ['finances/quotes', 'quotes'], ['finances/payments', 'payments'], ['finances', 'invoices'], ['hr/employees', 'people'], ['hr/employees/2', 'people']]
     for (const [addr, id] of w >= 1280 ? [...NAMED, ...REST] : NAMED) {
       await page.goto(PORTAL + addr, { waitUntil: 'domcontentloaded' })
       await page.locator('main').waitFor({ timeout: 15000 }).catch(() => {})
@@ -991,7 +989,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
   // Every page has a way in: each page address with no record id is reached from the menu in two clicks at most. This is the
   // only test of the doors that are tabs or links of the bar (Health, Upload, Forms, Address sheets).
   await block(w, h, 'every page has a way in', ADMIN, PORTAL + 'profile', async ({ page, seen, fails }) => {
-    const WAYS = [['/', 'home'], ['/calendar', 'calendar'], ['/derm', 'derm-visits'], ['/derm/manifests', 'manifests'], ['/derm/manifests/health', 'manifests', true], ['/derm/monthly', 'monthly-report'], ['/derm/gdo-lookup', 'gdo-lookup'], ['/derm/upload', 'manifests', true], ['/hr/access', 'access'], ['/hr/employees', 'people'], ['/planner', 'site-files'], ['/planner/forms', 'site-files', true], ['/review', 'reviews'], ['/review/grease', 'pumped-grease'], ['/review/water', 'pumped-water'], ['/stamp', 'manifests', true], ['/finances/invoices', 'invoices'], ['/finances/quotes', 'quotes'], ['/finances/payments', 'payments']]
+    const WAYS = [['/', 'home'], ['/calendar', 'calendar'], ['/derm/manifests', 'manifests'], ['/derm/manifests/visits', 'manifests', true], ['/derm/manifests/health', 'manifests', true], ['/derm/monthly', 'monthly-report'], ['/derm/gdo-lookup', 'gdo-lookup'], ['/derm/upload', 'manifests', true], ['/hr/access', 'access'], ['/hr/employees', 'people'], ['/planner', 'site-files'], ['/planner/forms', 'site-files', true], ['/review', 'reviews'], ['/review/grease', 'pumped-grease'], ['/review/water', 'pumped-water'], ['/stamp', 'manifests', true], ['/finances/invoices', 'invoices'], ['/finances/quotes', 'quotes'], ['/finances/payments', 'payments']]
     let reached = 0
     for (const [path, id, second] of WAYS) {
       const first = MENU.find(([m]) => m === id)[3]
@@ -1140,7 +1138,8 @@ await block(1280, 900, 'the Manifests row fits beside a wide clock', { ...ADMIN,
   if (m.clock !== 'Wed, Nov 25, 10:59 AM ET') fails.push(`the clock shows "${m.clock}", not the wide text`)
   if (m.side !== 228) fails.push(`the sidebar is ${m.side} px wide, not open`)
   // Stage C step 2: Upload is the page's button, no longer a tab of this row
-  if (JSON.stringify(m.words) !== JSON.stringify(['Manifests', 'Health', 'Address sheets'])) fails.push(`the row holds ${(m.words ?? []).join(' | ') || 'nothing'}`)
+  // #216 DV1 (2026-11-24): the Visits tab (the old DERM visits list) sits after Manifests
+  if (JSON.stringify(m.words) !== JSON.stringify(['Manifests', 'Visits', 'Health', 'Address sheets'])) fails.push(`the row holds ${(m.words ?? []).join(' | ') || 'nothing'}`)
   if (m.needs > m.has) fails.push(`the row needs ${m.needs} px and has ${m.has}: it scrolls sideways`)
   if (m.cut?.length) fails.push(`cut at the edge: ${m.cut.join(', ')}`)
   await shot(page, 1280, 'manifests row wide clock')
