@@ -25,6 +25,18 @@
       ],
       "restartPolicyType": "NEVER",
       "builder": "RAILPACK"
+    },
+    "note-photo": {
+      "startCommand": "node scripts/sync/run_logged.js railway_note_photo scripts/sync/sync_jobber_note_photos.js --execute --enable-remove --days=auto",
+      "cronSchedule": "5 * * * *",
+      "watchPatterns": [
+        "scripts/sync/**",
+        "scripts/lib/**",
+        "package.json",
+        "package-lock.json"
+      ],
+      "restartPolicyType": "NEVER",
+      "builder": "RAILPACK"
     }
   }
 }
