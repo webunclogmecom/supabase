@@ -82,6 +82,37 @@ async function callerAllowed(req: Request): Promise<boolean> {
   }
 }
 
+// Trello #248: the pdf-service names each visit's sheet number in X-Printed-Sheets ("<visit>:<sheet>,...").
+const FORM_FOR_PRINTS: Record<string, string> = {
+  'dade-derm-v4': 'derm-v4',
+  'fdep-62-705.300-3': 'fdep-62-705.300-3',
+}
+async function recordPrints(token: string, header: string | null, formKind: string | null): Promise<void> {
+  const form = formKind ? FORM_FOR_PRINTS[formKind] : undefined
+  if (!header || !form || !token) return
+  const pairs = header.split(',').map((p) => p.split(':').map(Number))
+    .filter(([v, s]) => Number.isInteger(v) && v > 0 && Number.isInteger(s) && s >= 1000)
+  if (pairs.length === 0) return
+  try {
+    const r = await fetch(`${Deno.env.get('SUPABASE_URL')}/rest/v1/rpc/fn_record_prints`, {
+      method: 'POST',
+      headers: {
+        apikey: Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Content-Profile': 'derm',
+      },
+      body: JSON.stringify({ p_visit_ids: pairs.map((p) => p[0]), p_sheet_nos: pairs.map((p) => p[1]), p_form_kind: form }),
+      signal: AbortSignal.timeout(4000),
+    })
+    const text = await r.text()
+    if (!r.ok) console.error('fn_record_prints', r.status, text.slice(0, 300))
+    else console.log('prints recorded', text, 'of', pairs.length)
+  } catch (e) {
+    console.error('fn_record_prints failed', String(e))
+  }
+}
+
 Deno.serve(async (req: Request) => {
   const cors = corsHeadersFor(req.headers.get('origin'))
 
@@ -188,6 +219,17 @@ Deno.serve(async (req: Request) => {
   // was dropped somewhere in the chain: both are a valid PDF at HTTP 200.
   const formKind = upstream.headers.get('X-Form-Kind')
   if (formKind) headers['X-Form-Kind'] = formKind
+
+  // Trello #248 (2026-11-25): record who printed which visit on which sheet, as the signed-in person
+  // (derm.fn_record_prints checks every pair against the sheet registers). Awaited so the app's list
+  // shows the printer when it reloads, but capped and never fatal: the operator gets their sheet.
+  if (!isSecretKeyCaller(req)) {
+    await recordPrints(
+      (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, ''),
+      upstream.headers.get('X-Printed-Sheets'),
+      formKind,
+    )
+  }
 
   return new Response(upstream.body, { status: 200, headers })
 })
