@@ -57,6 +57,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - 🔁 **CHANGED 2026-11-24 evening: the visit view becomes the timeline (VW3), not VW2.** Fred: *"for the visits view use the 1st
   image now, i know when you asked me i decided something else, but let's change it"* (with the round 2 picture of VW3). New card
   #250 `4XCga0bx` (In Progress; #215 stays in Testing / QA untouched). ✅ BUILT and LIVE the same evening (portal `a07b1bc`); #250 in Testing / QA.
+- ✅ **DECIDED 2026-11-25, nothing to build: Manifests > Visits keeps the CALENDAR day** (`visit_date`), while the visit view's
+  title shows the day the truck came and its top line names both. Fred: *"go with recommended"*. Measured: of 570 DERM visits in
+  90 days, 217 differ, all by one day, and 206 of those are night jobs where the truck arrived between midnight and 7 AM; switching
+  would move over a third of the list a day forward. Do not "align" the list to the arrival day.
 
 **GDO lookup: inside a site's City permits section, plus a page under Compliance (2026-11-24, Trello #242 ebj6IVxa)**
 - ✅ **BUILT and LIVE 2026-11-23 about 8 PM ET** (card in Testing / QA): edge fn `gdo-lookup` (Supabase `6f8a3179`,
