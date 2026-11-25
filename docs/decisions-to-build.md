@@ -981,6 +981,8 @@ Band A cards: Fred approved the one-page list on 2026-11-05 ("yes, keep 25 on 65
   print as the signed-in person). Reference: `docs/reference/derm-visit-prints.md`.
 - **Old DERM Tracker:** one Lovable prompt (Supabase 2 session); see DERM Tracker `docs/08-changelog.md` 2026-11-25.
 - **Ops Portal half: for the session named Supabase** (hand-off `Building Apps/Ops Portal/docs/specs/2026-11-25-derm-printed-248-handoff.md`).
+  ✅ **BUILT and LIVE 2026-11-25 about 10:25 AM ET** (portal `2f9b447`, entry `index-BZEhGSNQ.js`; Ops Portal
+  `docs/08-changelog.md`). Card items 2 and 4 ticked; In Progress until Diego tries it.
 
 ## 3. Waiting on Fred
 

@@ -32,7 +32,9 @@ prints; and neither register ever had a person. The registers are unchanged.
 
 - Old DERM Tracker (`derm.unclogme.app`): the grey printer box left of Missing Docs, the hover card, the warning before
   Generate. `Building Apps/DERM Tracker/docs/08-changelog.md` 2026-11-25.
-- Ops Portal (`/derm/manifests/visits`): FileX for "No manifest yet", the printer after it, the same card and warning.
+- Ops Portal (`/derm/manifests/visits`): FileX for "No manifest yet", the printer after it, the same card and warning;
+  the printer and card on the visit page beside "No manifest linked yet". LIVE 2026-11-25 (portal `2f9b447`): the app's
+  `docs/modules/derm.md` and Ops Portal `docs/08-changelog.md`.
   Built by the session named Supabase: `Building Apps/Ops Portal/docs/specs/2026-11-25-derm-printed-248-handoff.md`.
 
 ## Checks
