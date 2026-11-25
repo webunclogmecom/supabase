@@ -551,6 +551,22 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
     `docs/migrations/2026-11-03_1830_*_PROOF.sql` (ends in ROLLBACK). The routing rollbacks refuse a wrong order by md5
     guard since `_2255`. A new DERM reader that does not go through `v_derm_portal_fields` must apply the rule itself.
 
+## ✅ WHO PRINTED WHICH DERM VISIT: `derm.visit_prints` (2026-11-25, Trello #248)
+
+Diego: *"a status indicator for the DERM manifests, showing either "Printed" or "Missing Document." Every time someone
+prints a manifest, the system should automatically update its status"*; Fred: a printer icon with a card (when, the
+address sheet number, who), a warning before printing again, no "mark not printed", then "build it".
+- 🛑 **"Printed" = pressing Generate** (`generate-derm-address-preview`). A browser never sees paper leave a printer.
+- One row per visit per print in `derm.visit_prints` (audited), written ONLY by `derm.fn_record_prints`, which the edge fn
+  calls with the CALLER's token after the PDF (pdf-service 0.9.1 names each visit's sheet in `X-Printed-Sheets`). The
+  person is `hr.fn_access_caller()`; a pair must exist in the sheet register and be under 15 minutes old. History from
+  the registers (2026-07-28 on) has no person. Apps read `derm.v_visit_prints` only.
+- 🛑 **Never count prints from the registers**: a Broward reprint re-uses the visit's number and `regenerate_count`
+  moves twice per print.
+- 🛑 **Never press Generate to test it**: each press uses up a real sheet number. The office's next Generate proves the
+  path (`select * from derm.visit_prints where source = 'generate'`).
+- Live in the old DERM Tracker and the Ops Portal (`2f9b447`). Read [docs/reference/derm-visit-prints.md](docs/reference/derm-visit-prints.md).
+
 ## ✅ THE GDO LOOKUP: edge function `gdo-lookup` (2026-11-24, Trello #242)
 
 Fred: *"go with D1 and all recommended, build it"*. The Ops Portal searches Miami-Dade's public permit list, reads a permit
