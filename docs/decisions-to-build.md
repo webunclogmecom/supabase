@@ -959,6 +959,25 @@ Band A cards: Fred approved the one-page list on 2026-11-05 ("yes, keep 25 on 65
   Calendar about 4:50 PM ET** (Lovable `6533c3ee`, one prompt; Visit Calendar changelog). **Still open:** a real drag checked
   by a person (machines cannot drive the Calendar's drag), and Diego and Yan's answer on the line items (Fred posted the message 2026-11-18 2:02 PM ET; no reply by 11-24). **Trello: Testing / QA since 2026-11-24**, every item ticked; Diego has not reviewed. First real use 11-24: Serena saved Cloggy on 5 pumping visits past the warning (4 grey water, 1 grease trap), so grey water and lift stations on Cloggy are the question for Diego.
 
+**DERM visits: a printer icon when the address sheet was printed, the card of who / when / which sheet, a warning before printing again (2026-11-25, Trello #248 l5YyxQAD)**
+- Source: Diego, #new-app-issues 2026-11-24: *"a status indicator for the DERM manifests, showing either "Printed" or "Missing
+  Document." Every time someone prints a manifest, the system should automatically update its status"*; Serena in the thread
+  had to check the latest uploaded manifest to know what she had printed. Measured: 129 of the 332 visits on a Miami-Dade
+  sheet were on 2 or more sheets (1160 and 1161, 9 s apart, same 4 visits); who made a sheet was never saved.
+- **Fred's picks, 2026-11-25** (mockups `mockups/2026-11-25-derm-printed-248.html` and `-round2.html`, local): a printer
+  ICON, not the word, with a hover card like the Calendar's (when, the address sheet number, who); "No manifest yet" an
+  icon too in the portal (FileX, the IC1 missing-paper icon, white tooltip), the icons apart from the county chip; NO
+  "mark not printed"; printing again allowed after a warning that names the printed visits (Cancel / Generate anyway);
+  then "build it" = D1 (pressing Generate counts as printed) and the 8 defaults (both apps, the old app keeps its
+  Missing Docs chip, history from the registers with "By: not recorded", the person saved by the server, the icons
+  go once the manifest is attached, Broward counted the same way, ET).
+- **Database + server BUILT and LIVE 2026-11-25 ~3 AM ET:** `2026-11-25_0300_derm_visit_prints.sql` (`derm.visit_prints`,
+  `derm.fn_record_prints`, `derm.v_visit_prints`; history 546 Dade rows / 332 visits + 112 Broward; rehearsed rolled
+  back), pdf-service 0.9.1 (`X-Printed-Sheets`, `92ba79e`), edge fn `generate-derm-address-preview` v55 (records the
+  print as the signed-in person). Reference: `docs/reference/derm-visit-prints.md`.
+- **Old DERM Tracker:** one Lovable prompt (Supabase 2 session); see DERM Tracker `docs/08-changelog.md` 2026-11-25.
+- **Ops Portal half: for the session named Supabase** (hand-off `Building Apps/Ops Portal/docs/specs/2026-11-25-derm-printed-248-handoff.md`).
+
 ## 3. Waiting on Fred
 
 - HR invites: answered 2026-10-26 (Field sign-ins open no app yet, D17 stays; parts A to C "go ahead", all built, section 2). Decision 22 (emailed re-authentication before a password change) is REPLACED 2026-10-27, see the HR Change password row in section 2.
